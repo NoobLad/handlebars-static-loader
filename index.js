@@ -5,10 +5,21 @@ var util = require("util");
 var path = require("path");
 var fastreplace = require('./lib/fastreplace');
 var findNestedRequires = require('./lib/findNestedRequires');
+var macroParser = require('./lib/macroParser');
 
 function versionCheck(hbCompiler, hbRuntime) {
 	return hbCompiler.COMPILER_REVISION === (hbRuntime["default"] || hbRuntime).COMPILER_REVISION;
 }
+
+var _extend = function(obj, from) {
+	for (var key in from) {
+		if (!from.hasOwnProperty(key)) continue;
+		obj[key] = from[key];
+	}
+	return obj;
+};
+
+var macros = _extend({}, require('./lib/macros'));
 
 module.exports = function(source) {
 	if (this.cacheable) this.cacheable();
@@ -19,7 +30,6 @@ module.exports = function(source) {
 	if (!versionCheck(handlebars, require(runtimePath))) {
 		throw new Error('Handlebars compiler version does not match runtime version');
 	}
-
 	// Possible extensions for partials
 	var extensions = query.extensions;
 	if (!extensions) {
@@ -254,6 +264,19 @@ module.exports = function(source) {
 				'var Handlebars = require(' + JSON.stringify(runtimePath) + ');\n'
 				+ 'module.exports = (Handlebars["default"] || Handlebars).template(' + template + ');' :
 				'module.exports = function(){return "";};';
+
+			// Parse macros
+			if (query.parseMacros == null || query.parseMacros) {
+                var options = loaderApi.options['handlebarsLoader'];
+                if (options && options.macros instanceof Object) {
+                    macros = _extend(macros, options.macros);
+                }
+                var macrosContext = macroParser(slug, function (macro) {
+                    return macros[macro] !== undefined && typeof(macros[macro]) === 'function';
+                }, 'MACRO');
+                slug = macrosContext.replaceMatches(slug);
+                slug = macrosContext.resolveMacros(slug, macros);
+			}
 
 			loaderAsyncCallback(null, slug);
 		};
